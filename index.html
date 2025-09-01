@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Minesweeper</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    table { margin: 20px auto; border-collapse: collapse; }
+    td {
+      width: 30px; height: 30px;
+      border: 1px solid #555;
+      text-align: center; vertical-align: middle;
+      background: #ccc; cursor: pointer;
+    }
+    td.revealed { background: #eee; }
+    td.mine { background: red; }
+  </style>
+</head>
+<body>
+  <h1>Minesweeper</h1>
+  <p>Click cells to reveal. Coordinates shown as (row, col).</p>
+  <div id="board"></div>
+
+  <script>
+    const rows = 9, cols = 9, mines = 10;
+    let board = [], mineSet = new Set();
+
+    // 隨機放地雷
+    while (mineSet.size < mines) {
+      mineSet.add(Math.floor(Math.random() * rows * cols));
+    }
+
+    // 建立空白盤面
+    for (let r = 0; r < rows; r++) {
+      board[r] = [];
+      for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c;
+        board[r][c] = { mine: mineSet.has(idx), revealed: false, count: 0 };
+      }
+    }
+
+    // 計算周圍雷數
+    const dirs = [-1, 0, 1];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (board[r][c].mine) continue;
+        let cnt = 0;
+        dirs.forEach(dr => dirs.forEach(dc => {
+          if (dr || dc) {
+            let nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && board[nr][nc].mine) cnt++;
+          }
+        }));
+        board[r][c].count = cnt;
+      }
+    }
+
+    // 畫棋盤
+    const div = document.getElementById("board");
+    const table = document.createElement("table");
+    for (let r = 0; r < rows; r++) {
+      const tr = document.createElement("tr");
+      for (let c = 0; c < cols; c++) {
+        const td = document.createElement("td");
+        td.dataset.row = r; td.dataset.col = c;
+        td.onclick = () => reveal(r, c, td);
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    div.appendChild(table);
+
+    // 點擊展開
+    function reveal(r, c, cell) {
+      if (board[r][c].revealed) return;
+      board[r][c].revealed = true;
+      cell.classList.add("revealed");
+      if (board[r][c].mine) {
+        cell.classList.add("mine");
+        cell.textContent = "💣";
+        alert("Game Over!");
+      } else {
+        cell.textContent = board[r][c].count || "";
+        console.log(`Revealed (${r}, ${c})`);
+      }
+    }
+  </script>
+</body>
+</html>
