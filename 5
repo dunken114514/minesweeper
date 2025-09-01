@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>座標踩地雷 (0,0 左上)</title>
+<style>
+  :root { --cell: 34px; --gap: 4px; --bg:#0e1117; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#22d3ee; }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:14px/1.3 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
+  header{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;background:var(--panel);padding:10px 12px;position:sticky;top:0;border-bottom:1px solid #1f2937}
+  header input{width:6rem;padding:.45rem .6rem;border-radius:10px;border:1px solid #374151;background:#0b1220;color:var(--ink)}
+  header button{padding:.55rem .9rem;border-radius:12px;border:1px solid #1f2937;background:#0b1220;color:var(--ink);cursor:pointer}
+  header button:hover{border-color:#334155}
+  #hud{display:flex;gap:14px;align-items:center;color:var(--muted)}
+  #gridWrap{padding:18px;display:flex;flex-direction:column;gap:10px;align-items:center}
+  #labels{display:flex;gap:var(--gap);user-select:none}
+  #labels > div{width:var(--cell);text-align:center;color:var(--muted)}
+  #grid{display:grid;gap:var(--gap);user-select:none;touch-action:manipulation}
+  .rowIdx{color:var(--muted);display:grid;gap:var(--gap);margin-right:8px}
+  .rowIdx > div{height:var(--cell);display:flex;align-items:center;justify-content:center}
+  .cell{
+    width:var(--cell);height:var(--cell);display:flex;align-items:center;justify-content:center;
+    background:#0b1220;border:1px solid #1f2937;border-radius:8px;cursor:pointer;font-weight:700;
+  }
+  .cell.open{background:#121a2a}
+  .cell.flag::after{content:"⚑";color:#f43f5e;font-size:18px}
+  .cell.mine.open{background:#3b0b15}
+  .cell:focus{outline:2px solid #334155;outline-offset:1px}
+  .n1{color:#60a5fa}.n2{color:#34d399}.n3{color:#f87171}.n4{color:#c084fc}.n5{color:#fbbf24}.n6{color:#22d3ee}.n7{color:#e879f9}.n8{color:#9ca3af}
+  #cmd{width:20rem}
+  footer{color:#6b7280;text-align:center;padding:10px}
+</style>
+</head>
+<body>
+  <header>
+    行(rows): <input id="rows" type="number" min="5" max="50" value="16">
+    列(cols): <input id="cols" type="number" min="5" max="50" value="16">
+    地雷(mines): <input id="mines" type="number" min="1" value="40">
+    <button id="newGame">新局</button>
+    <div id="hud">
+      <span>剩餘地雷：<b id="rem">0</b></span>
+      <span>上次點：(<span id="lastX">-</span>, <span id="lastY">-</span>)</span>
+      <span>狀態：<b id="status">進行中</b></span>
+    </div>
+    <div style="flex:1"></div>
+    <input id="cmd" placeholder='指令：r x y（開） / f x y（旗），例如 "r 3 5"'>
+    <button id="run">送出</button>
+  </header>
+
+  <div id="gridWrap">
+    <div id="labels"></div>
+    <div style="display:flex">
+      <div id="rowLabels" class="rowIdx"></div>
+      <div id="grid"></div>
+    </div>
+  </div>
+
+  <footer>座標從 (0,0) 開始，x 向右、y 向下。右鍵 = 插旗；長按手機亦可插旗。</footer>
+
+<script>
+(() => {
+  const gridEl = document.getElementById('grid');
+  const labelsEl = document.getElementById('labels');
+  const rowLabelsEl = document.getElementById('rowLabels');
+  const remEl = document.getElementById('rem');
+  const lastXEl = document.getElementById('lastX');
+  const lastYEl = document.getElementById('lastY');
+  const statusEl = document.getElementById('status');
+  const rowsI = document.getElementById('rows');
+  const colsI = document.getElementById('cols');
+  const minesI = document.getElementById('mines');
+  const newBtn = document.getElementById('newGame');
+  const cmdI = document.getElementById('cmd');
+  const runBtn = document.getElementById('run');
+
+  // 狀態
+  let R=16,C=16,M=40, firstClick=true, alive=true, openCount=0, flags=0;
+  let cells=[]; // {mine,open,flag,count}
+
+  function idx(x,y){ return y*C + x; }
+  function inb(x,y){ return x>=0 && y>=0 && x<C && y<R; }
+
+  function layMines(safeX, safeY){
+    let placed=0;
+    const safeSet=new Set();
+    // 開局保護：第一點與其鄰格不放雷
+    for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++){
+      const x=safeX+dx, y=safeY+dy;
+      if(inb(x,y)) safeSet.add(idx(x,y));
+    }
+    while(placed<M){
+      const x=Math.floor(Math.random()*C);
+      const y=Math.floor(Math.random()*R);
+      const id=idx(x,y);
+      if(safeSet.has(id) || cells[id].mine) continue;
+      cells[id].mine=true; placed++;
+    }
+    // 計數
+    for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+      const id=idx(x,y);
+      if(cells[id].mine){ cells[id].count=-1; continue; }
+      let n=0;
+      for(let dy=-1; dy<=1; dy++) for(let dx=-1; dx<=1; dx++){
+        if(!dx && !dy) continue;
+        const nx=x+dx, ny=y+dy;
+        if(inb(nx,ny) && cells[idx(nx,ny)].mine) n++;
+      }
+      cells[id].count=n;
+    }
+  }
+
+  function build(){
+    R=parseInt(rowsI.value); C=parseInt(colsI.value); M=parseInt(minesI.value);
+    M=Math.min(M, R*C-9); // 留開局保護空間
+    statusEl.textContent='進行中'; alive=true; firstClick=true; openCount=0; flags=0;
+    remEl.textContent=M; lastXEl.textContent='-'; lastYEl.textContent='-';
+    gridEl.style.gridTemplateColumns=`repeat(${C}, var(--cell))`;
+    labelsEl.innerHTML=''; rowLabelsEl.innerHTML=''; gridEl.innerHTML='';
+    // x 標籤
+    for(let x=0;x<C;x++){ const d=document.createElement('div'); d.textContent=x; labelsEl.appendChild(d); }
+    // y 標籤
+    rowLabelsEl.style.gridTemplateRows=`repeat(${R}, var(--cell))`;
+    for(let y=0;y<R;y++){ const d=document.createElement('div'); d.textContent=y; rowLabelsEl.appendChild(d); }
+    // cells
+    cells = Array.from({length:R*C},()=>({mine:false,open:false,flag:false,count:0}));
+    for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+      const d=document.createElement('button');
+      d.className='cell'; d.setAttribute('data-x',x); d.setAttribute('data-y',y);
+      d.addEventListener('click', (e)=> onReveal(x,y));
+      d.addEventListener('contextmenu',(e)=>{e.preventDefault(); onFlag(x,y);});
+      // 手機長按旗
+      let pressT; d.addEventListener('pointerdown',()=>{ pressT=setTimeout(()=>onFlag(x,y),500); });
+      d.addEventListener('pointerup',()=> clearTimeout(pressT));
+      gridEl.appendChild(d);
+    }
+  }
+
+  function onFlag(x,y){
+    if(!alive) return;
+    const c=cells[idx(x,y)];
+    if(c.open) return;
+    c.flag=!c.flag;
+    const el = cellEl(x,y);
+    el.classList.toggle('flag', c.flag);
+    flags += c.flag ? 1 : -1;
+    remEl.textContent = Math.max(0, M-flags);
+  }
+
+  function onReveal(x,y){
+    if(!alive) return;
+    lastXEl.textContent=x; lastYEl.textContent=y;
+    if(firstClick){ layMines(x,y); firstClick=false; }
+    const c=cells[idx(x,y)];
+    if(c.flag || c.open) return;
+    c.open=true; openCount++;
+    const el = cellEl(x,y);
+    el.classList.add('open');
+    if(c.mine){
+      el.classList.add('mine'); el.textContent='💣';
+      alive=false; statusEl.textContent='踩雷了 😵'; showAllMines(); return;
+    }
+    if(c.count>0){ el.classList.add('n'+c.count); el.textContent=c.count; }
+    else flood(x,y);
+
+    // 勝利檢查
+    if(alive && openCount === R*C - M){
+      statusEl.textContent='勝利 🎉';
+      revealAllSafe();
+    }
+  }
+
+  function flood(x,y){
+    // 展開 0 連通區
+    const q=[[x,y]];
+    while(q.length){
+      const [cx,cy]=q.shift();
+      for(let dy=-1; dy<=1; dy++) for(let dx=-1; dx<=1; dx++){
+        const nx=cx+dx, ny=cy+dy;
+        if(!inb(nx,ny)) continue;
+        const n=cells[idx(nx,ny)];
+        if(n.open || n.flag) continue;
+        n.open=true; openCount++;
+        const el=cellEl(nx,ny); el.classList.add('open');
+        if(n.mine){ /*不會發生*/ }
+        else if(n.count>0){ el.classList.add('n'+n.count); el.textContent=n.count; }
+        else q.push([nx,ny]);
+      }
+    }
+  }
+
+  function showAllMines(){
+    for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+      const c=cells[idx(x,y)]; const el=cellEl(x,y);
+      if(c.mine){ el.classList.add('open','mine'); el.textContent='💣'; }
+    }
+  }
+  function revealAllSafe(){
+    for(let y=0;y<R;y++)for(let x=0;x<C;x++){
+      const c=cells[idx(x,y)]; const el=cellEl(x,y);
+      if(!c.mine && !c.open){
+        c.open=true; el.classList.add('open');
+        if(c.count>0){ el.classList.add('n'+c.count); el.textContent=c.count; }
+      }
+    }
+  }
+  function cellEl(x,y){ return gridEl.children[idx(x,y)]; }
+
+  // 指令列：r x y / f x y
+  function runCmd(){
+    const s=cmdI.value.trim();
+    const m=s.match(/^([rf])\s+(\d+)\s+(\d+)$/i);
+    if(!m) return alert('格式：r x y（開）或 f x y（旗）');
+    const act=m[1].toLowerCase(), x=+m[2], y=+m[3];
+    if(!inb(x,y)) return alert('座標超出範圍');
+    if(act==='r') onReveal(x,y); else onFlag(x,y);
+    cmdI.value='';
+  }
+
+  newBtn.onclick = build;
+  runBtn.onclick = runCmd;
+  cmdI.addEventListener('keydown', e=>{ if(e.key==='Enter') runCmd(); });
+
+  // 初始
+  build();
+})();
+</script>
+</body>
+</html>
